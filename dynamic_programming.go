@@ -68,13 +68,13 @@ type CacheValue struct {
 type Cache syncmap.Map
 
 func getCost(path *mat64.Dense, start int, stop int, cache *syncmap.Map) float64 {
-	key := hashCode(start, stop)
+	//key := hashCode(start, stop)
 
 	// check if return value has been cached
-	value, ok := cache.Load(key)
-	if ok {
-		return value.(CacheValue).cost
-	}
+	//value, ok := cache.Load(key)
+	//if ok {
+	//	return value.(CacheValue).cost
+	//}
 
 	// check that stop and start haven't gotten goofed up
 	size, dim := path.Dims()
@@ -93,7 +93,7 @@ func getCost(path *mat64.Dense, start int, stop int, cache *syncmap.Map) float64
 		}
 		cost += math.Sqrt(diffsSq)
 	}
-	cache.Store(key, CacheValue{nil, cost}) // cache result
+	//cache.Store(key, CacheValue{nil, cost}) // cache result
 	return cost
 }
 
@@ -146,8 +146,8 @@ func bestChoice(nChoices int, path *mat64.Dense) ([]int, float64) {
 
 func main() {
 	rand.Seed(0)
-	walk := simpleRandomWalk(8)
-	choices, cost := bestChoice(2, walk)
+	walk := simpleRandomWalk(64)
+	choices, cost := bestChoice(16, walk)
 	fmt.Println(mat64.Formatted(walk.T()))
 	fmt.Println(choices)
 	fmt.Println(cost)
