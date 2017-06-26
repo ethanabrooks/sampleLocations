@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"sync"
 	"runtime"
+	"sync/atomic"
 )
 
 func randNormVector(size int) *mat64.Vector {
@@ -58,8 +59,16 @@ func randomWalk(steps int, dim int) *mat64.Dense {
 	return positions
 }
 
-func hashCode(start int, stop int, nChoices ...int) string {
-	return fmt.Sprint(start, stop, nChoices)
+func reverse(numbers []int) []int {
+	for i := 0; i < len(numbers)/2; i++ {
+		j := len(numbers) - i - 1
+		numbers[i], numbers[j] = numbers[j], numbers[i]
+	}
+	return numbers
+}
+
+func hashCode(a int, b int, nChoices ...int) string {
+	return fmt.Sprint(a, b, nChoices)
 }
 
 type CacheValue struct {
@@ -68,6 +77,19 @@ type CacheValue struct {
 }
 
 type Cache syncmap.Map
+var cacheSize uint32 = 0
+
+const CACHE_LIMIT uint32 = 1e6
+
+func store(cache *syncmap.Map, key string, value CacheValue) {
+	if cacheSize < CACHE_LIMIT {
+		cache.Store(key, value) // add return value to cache
+		atomic.AddUint32(&cacheSize, 1)
+	} else {
+		fmt.Println("Cache is tapped.")
+	}
+}
+
 
 func getCost(path *mat64.Dense, start int, stop int, cache *syncmap.Map) float64 {
 	key := hashCode(start, stop)
@@ -95,7 +117,7 @@ func getCost(path *mat64.Dense, start int, stop int, cache *syncmap.Map) float64
 		}
 		cost += math.Sqrt(diffsSq)
 	}
-	cache.Store(key, CacheValue{nil, cost}) // cache result
+	store(cache, key, CacheValue{nil, cost})
 	return cost
 }
 
@@ -119,7 +141,6 @@ func _bestChoice(nChoices int, path *mat64.Dense, start int, stop int,
 	minCost := math.Inf(1)
 	var bestChoices []int
 
-	//sem := make(chan bool, stop-start)
 	indices := make(chan int)
 	go func() {
 		for i := start + 1; i < stop; i++ {
@@ -141,17 +162,12 @@ func _bestChoice(nChoices int, path *mat64.Dense, start int, stop int,
 					bestChoices = append(sliceAfter.choices, j)
 				}
 			}
-			//sem <- true
 		}()
 	}
 	group.Wait()
-	//for i := start + 1; i < stop; i++ {
-	//	<-sem
-	//}
 	value = CacheValue{bestChoices, minCost}
-	cache.Store(key, value) // add return value to cache
+	store(cache, key, value.(CacheValue))
 	return value.(CacheValue)
-	//return CacheValue{bestChoices, minCost}
 }
 
 func bestChoice(nChoices int, path *mat64.Dense) ([]int, float64) {
@@ -162,9 +178,9 @@ func bestChoice(nChoices int, path *mat64.Dense) ([]int, float64) {
 
 func main() {
 	rand.Seed(0)
-	walk := simpleRandomWalk(64)
-	choices, cost := bestChoice(16, walk)
+	walk := simpleRandomWalk(26)
+	choices, _ := bestChoice(7, walk)
 	fmt.Println(mat64.Formatted(walk.T()))
 	fmt.Println(choices)
-	fmt.Println(cost)
+	fmt.Println(cacheSize)
 }
