@@ -5,7 +5,7 @@ import (
 	"github.com/gonum/matrix/mat64"
 	"math"
 	"math/rand"
-	"sync"
+	"golang.org/x/sync/syncmap"
 )
 
 func randNormVector(size int) *mat64.Vector {
@@ -56,123 +56,101 @@ func randomWalk(steps int, dim int) *mat64.Dense {
 	return positions
 }
 
-func euclidean_distance(a mat64.Matrix, b mat64.Matrix) float64 {
-	rowsA, colsA := a.Dims()
-	rowsB, colsB := b.Dims()
-	if rowsA != rowsB {
-		panic(fmt.Sprintf("rows of `a` (%d) not equal to rows of `b` (%d)",
-			rowsA, rowsB))
-	}
-	if colsA != colsB {
-		panic(fmt.Sprintf("cols of `a` (%d) not equal to cols of `b` (%d)",
-			colsA, colsB))
-	}
-	sq_distance := 0.0
-	for i := 0; i < rowsA; i++ {
-		sq_distance += math.Pow(a.At(i, 0)+b.At(i, 0), 2) // (a[i] + b[i])^2
-	}
-	return math.Sqrt(sq_distance)
+
+func hashCode(path *mat64.Dense, start int, stop int, nChoices ...int) string {
+	_, dim := path.Dims()
+	return fmt.Sprint(nChoices, mat64.Formatted(path.Slice(start, stop, 0, dim).T()))
 }
 
-func get_cost_(path *mat64.Dense) float64 {
-	size, _ := path.Dims()
-	head := path.RowView(0)
-	cost := 0.0
-	for i := 0; i < size; i++ {
-		pos := path.RowView(i)
-		cost += euclidean_distance(head, pos)
-	}
-	return cost
+type CacheValue struct{
+	choices []int
+	cost float64
 }
 
+type Cache syncmap.Map
 
 
-func cost_at(i int, n_choices int,
-	path *mat64.Dense, start int, stop int) ([]int, float64){
-	choices, cost := bestChoiceSlice(n_choices - 1, path, start + i, stop)
-	err := getCost(path, start, start + i)
-	new_choices := make([]int, len(choices))
-	copy(new_choices, choices)
+func getCost(path *mat64.Dense, start int, stop int, cache *syncmap.Map) float64 {
+	key := hashCode(path, start, stop)
 
-	for j := range new_choices {
-		new_choices[j] += i
+	// check if return value has been cached
+	value, ok := cache.Load(key)
+	if ok {
+		return value.(CacheValue).cost
 	}
-	return append(new_choices, i), err + cost
-}
 
-func getCost(path *mat64.Dense, start int, stop int) float64 {
+	// check that stop and start haven't gotten goofed up
 	size, dim := path.Dims()
 	if start < 0 || stop > size {
 		panic(fmt.Sprintf( "start (%d) must be positive and stop (%d) must be less " +
 			"than path length (%d)", start, stop, size))
 	}
 
-	sq_cost := 0.0
-
-	//TODO: parallel
+	// accumulate cost of path
+	cost := 0.0
 	for i := start + 1; i < stop; i ++ {
+		diffsSq := 0.0
 		for j := 0; j < dim; j++ {
 			diff := path.At(i, j) - path.At(start, j)
-			sq_cost += math.Pow(diff, 2)
+			diffsSq += math.Pow(diff, 2)
 		}
+		cost += math.Sqrt(diffsSq)
 	}
-	return math.Sqrt(sq_cost)
+	cache.Store(key, CacheValue{nil, cost}) // cache result
+	return cost
 }
 
-func hashCode(path *mat64.Dense, start int, stop int, nChoices ...int) string {
-	return fmt.Sprint(nChoices, mat64.Formatted(path.T()), start, stop)
-}
 
-type costChoices struct {
-	cost float64
-	choices []int
-}
+func _bestChoice(nChoices int, path *mat64.Dense, start int, stop int,
+cache *syncmap.Map) CacheValue {
 
-type Cache struct{
-	cache map[string]struct{
-		cost float64
-		choices []int
+	key := hashCode(path, start, stop, nChoices)
+	
+	// check if return value has been cached
+	value, ok := cache.Load(key)
+	if ok {
+		return value.(CacheValue)
 	}
-	lock sync.RWMutex
-}
+	
+	// if not cached, calculate
+	if nChoices == 0 { // running out of choices is terminal condition
+		return CacheValue{nil, getCost(path, start, stop, cache)}
+	}
 
+	// find the choice of i that minimizes cost
+	minCost := math.Inf(1)
+	var bestChoices []int
 
-func bestChoiceSlice(nChoices int, path *mat64.Dense, start int, stop int) ([]int, float64) {
-	if nChoices == 0 {
-		//key := hashCode(path, start, stop)
-		//var cost float64
-		//if value, ok := cache.cache[key]; ok {
-		//	cost = value.cost
-		//} else {
-		//	cost = getCost(path, start, stop)
-		//}
-		return make([]int, 0, 50), getCost(path, start, stop)
-	} else {
-		minCost := math.Inf(1)
-		var bestChoices []int
-
-		for i := start + 1; i < stop; i++ {
-			err := getCost(path, start, i)
-			choices, cost := bestChoiceSlice(nChoices - 1, path, i, stop)
-			if err + cost < minCost {
-				minCost = err + cost
-				bestChoices = append(choices, i)
+	sem := make(chan bool, stop - start)
+	// TODO: parallel
+	for i := start + 1; i < stop; i++ {
+		go func (i int) {
+			sliceAfter := _bestChoice(nChoices - 1, path, i, stop, cache)
+			cost := getCost(path, start, i, cache) + sliceAfter.cost
+			if cost < minCost {
+				minCost =cost
+				bestChoices = append(sliceAfter.choices, i)
 			}
-		}
-		return bestChoices, minCost
+			sem <- true
+		}(i)
 	}
+	for i := start + 1; i < stop; i++ { <-sem }
+	value = CacheValue{bestChoices, minCost}
+	cache.Store(key, value) // add return value to cache
+	return value.(CacheValue)
 }
 
 func bestChoice(nChoices int, path *mat64.Dense) ([]int, float64) {
 	size, _ := path.Dims()
-	//cache := Cache{}
-	return bestChoiceSlice(nChoices, path, 0, size)
+	value := _bestChoice(nChoices, path, 0, size, &syncmap.Map{})
+	return value.choices, value.cost
 }
 
 func main() {
-	rand.Seed(2)
-	walk := simpleRandomWalk(20)
-	choices, cost := bestChoice(5, walk)
+	rand.Seed(0)
+	walk := simpleRandomWalk(40)
+	choices, cost := bestChoice(20, walk)
+	fmt.Println(mat64.Formatted(walk.T()))
 	fmt.Println(choices)
 	fmt.Println(cost)
 }
