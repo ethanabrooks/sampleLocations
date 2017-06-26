@@ -145,8 +145,8 @@ func bestChoice(nChoices int, path *mat64.Dense) ([]int, float64) {
 
 func main() {
 	rand.Seed(0)
-	walk := simpleRandomWalk(40)
-	choices, cost := bestChoice(20, walk)
+	walk := simpleRandomWalk(8)
+	choices, cost := bestChoice(2, walk)
 	fmt.Println(mat64.Formatted(walk.T()))
 	fmt.Println(choices)
 	fmt.Println(cost)
