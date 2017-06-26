@@ -5,6 +5,7 @@ import (
 	"github.com/gonum/matrix/mat64"
 	"math"
 	"math/rand"
+	"sync"
 )
 
 func randNormVector(size int) *mat64.Vector {
@@ -20,6 +21,23 @@ func setRow(i int, m *mat64.Dense, v *mat64.Vector) {
 	for j := 0; j < dim; j++ {
 		m.Set(i, j, v.At(j, 0))
 	}
+}
+
+func simpleRandomWalk(steps int) *mat64.Dense {
+	positions := mat64.NewDense(steps, 1, nil)
+	vel := 0
+	for i := 1; i < steps; i++ {
+		acc := rand.Intn(5)
+		if rand.NormFloat64() > 0 {
+			vel += acc
+		} else {
+			vel -= acc
+		}
+		//vel *= noise           // vel *= noise
+		oldPos := int(positions.At(i - 1, 0))
+		positions.Set(i, 0, float64(oldPos + vel))
+	}
+	return positions
 }
 
 func randomWalk(steps int, dim int) *mat64.Dense {
@@ -38,7 +56,7 @@ func randomWalk(steps int, dim int) *mat64.Dense {
 	return positions
 }
 
-func euclidean_distance(a *mat64.Vector, b *mat64.Vector) float64 {
+func euclidean_distance(a mat64.Matrix, b mat64.Matrix) float64 {
 	rowsA, colsA := a.Dims()
 	rowsB, colsB := b.Dims()
 	if rowsA != rowsB {
@@ -56,7 +74,7 @@ func euclidean_distance(a *mat64.Vector, b *mat64.Vector) float64 {
 	return math.Sqrt(sq_distance)
 }
 
-func get_cost(path *mat64.Dense) float64 {
+func get_cost_(path *mat64.Dense) float64 {
 	size, _ := path.Dims()
 	head := path.RowView(0)
 	cost := 0.0
@@ -67,18 +85,94 @@ func get_cost(path *mat64.Dense) float64 {
 	return cost
 }
 
-//func best_choice(path *mat64.Dense, n_choices int) []int {
-//size, _ := path.Dims()
-//cache := mat64.NewTriDense(size, false, nil)
-//cache.SetTri(0, 0, get_cost(path.
-//for i := 1; i < size; i++ {
 
-//}
-//}
+
+func cost_at(i int, n_choices int,
+	path *mat64.Dense, start int, stop int) ([]int, float64){
+	choices, cost := bestChoiceSlice(n_choices - 1, path, start + i, stop)
+	err := getCost(path, start, start + i)
+	new_choices := make([]int, len(choices))
+	copy(new_choices, choices)
+
+	for j := range new_choices {
+		new_choices[j] += i
+	}
+	return append(new_choices, i), err + cost
+}
+
+func getCost(path *mat64.Dense, start int, stop int) float64 {
+	size, dim := path.Dims()
+	if start < 0 || stop > size {
+		panic(fmt.Sprintf( "start (%d) must be positive and stop (%d) must be less " +
+			"than path length (%d)", start, stop, size))
+	}
+
+	sq_cost := 0.0
+
+	//TODO: parallel
+	for i := start + 1; i < stop; i ++ {
+		for j := 0; j < dim; j++ {
+			diff := path.At(i, j) - path.At(start, j)
+			sq_cost += math.Pow(diff, 2)
+		}
+	}
+	return math.Sqrt(sq_cost)
+}
+
+func hashCode(path *mat64.Dense, start int, stop int, nChoices ...int) string {
+	return fmt.Sprint(nChoices, mat64.Formatted(path.T()), start, stop)
+}
+
+type costChoices struct {
+	cost float64
+	choices []int
+}
+
+type Cache struct{
+	cache map[string]struct{
+		cost float64
+		choices []int
+	}
+	lock sync.RWMutex
+}
+
+
+func bestChoiceSlice(nChoices int, path *mat64.Dense, start int, stop int) ([]int, float64) {
+	if nChoices == 0 {
+		//key := hashCode(path, start, stop)
+		//var cost float64
+		//if value, ok := cache.cache[key]; ok {
+		//	cost = value.cost
+		//} else {
+		//	cost = getCost(path, start, stop)
+		//}
+		return make([]int, 0, 50), getCost(path, start, stop)
+	} else {
+		minCost := math.Inf(1)
+		var bestChoices []int
+
+		for i := start + 1; i < stop; i++ {
+			err := getCost(path, start, i)
+			choices, cost := bestChoiceSlice(nChoices - 1, path, i, stop)
+			if err + cost < minCost {
+				minCost = err + cost
+				bestChoices = append(choices, i)
+			}
+		}
+		return bestChoices, minCost
+	}
+}
+
+func bestChoice(nChoices int, path *mat64.Dense) ([]int, float64) {
+	size, _ := path.Dims()
+	//cache := Cache{}
+	return bestChoiceSlice(nChoices, path, 0, size)
+}
 
 func main() {
-	//walk := randomWalk(3, 1)
-	//cost := get_cost(walk)
-	//fmt.Println(mat64.Formatted(walk))
-	//fmt.Println(cost)
+	rand.Seed(2)
+	walk := simpleRandomWalk(20)
+	choices, cost := bestChoice(5, walk)
+	fmt.Println(choices)
+	fmt.Println(cost)
 }
