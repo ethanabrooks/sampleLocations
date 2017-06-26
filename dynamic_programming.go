@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 	"github.com/gonum/matrix/mat64"
-	"golang.org/x/sync/syncmap"
 	"math"
 	"math/rand"
 	"sync"
 	"runtime"
-	"sync/atomic"
 )
+
+var INF = math.Inf(1)
 
 func randNormVector(size int) *mat64.Vector {
 	vector := mat64.NewVector(size, nil)
@@ -31,12 +31,11 @@ func simpleRandomWalk(steps int) *mat64.Dense {
 	vel := 0
 	for i := 1; i < steps; i++ {
 		acc := rand.Intn(5)
-		if rand.NormFloat64() > 0 {
+		if rand.NormFloat64() - .5 > 0 {
 			vel += acc
 		} else {
 			vel -= acc
 		}
-		//vel *= noise           // vel *= noise
 		oldPos := int(positions.At(i-1, 0))
 		positions.Set(i, 0, float64(oldPos+vel))
 	}
@@ -67,43 +66,56 @@ func reverse(numbers []int) []int {
 	return numbers
 }
 
-func hashCode(a int, b int, getCost bool) string {
-	return fmt.Sprint(a, b, getCost)
-}
-
 type CacheValue struct {
 	choices []int
 	cost    float64
 }
 
-type Cache *syncmap.Map
+type Cache struct {
+	cost *mat64.Dense
+	choice *mat64.Dense
+}
 var cacheSize uint32 = 0
 
-const CACHE_LIMIT uint32 = 1e6
+func load(cache *Cache, i int, j int, includeChoices bool) (CacheValue, bool) {
+	cost := cache.cost.At(i, j)
+	choice := cache.choice.At(i, j)
 
-func load(cache *syncmap.Map, a int, b int, getCost bool) (CacheValue, bool) {
-	value, ok := cache.Load(hashCode(a, b, getCost))
-	if ok {
-		return value.(CacheValue), ok
-	} else {
-		return CacheValue{}, ok
+	switch {
+	case math.IsNaN(cost) && !math.IsNaN(choice):
+		panic("Caches out of sync") // every choice should have an associated cost
+	case math.IsNaN(cost) || math.IsNaN(choice) && includeChoices:
+		return CacheValue{}, false // desired values are infs means cache miss
+	case !math.IsNaN(cost) && !includeChoices:   // whether or not math.IsNaN(choice)
+		return CacheValue{nil, cost}, true // we only care about cost: ignore missing choice
+	default: //case !math.IsNaN(cost) && includeChoices:
+		// walk backward through cache selecting best choices
+		fmt.Println("Cost:", cost, "includeChoices:", includeChoices)
+		var choices []int
+		for choiceNum := i - 1; i >= 0; i-- {
+			choice = cache.choice.At(choiceNum, int(choice))
+			choices = append(choices, int(choice))
+		}
+		return CacheValue{choices, cost}, true
 	}
 }
 
-func store(cache *syncmap.Map, a int, b int, isCostValue bool, value CacheValue) {
-	if cacheSize < CACHE_LIMIT {
-		cache.Store(hashCode(a, b, isCostValue), value) // add return value to cache
-		atomic.AddUint32(&cacheSize, 1)
-	} else {
-		fmt.Println("Cache is tapped.")
+func store(cache *Cache, i int, j int, includesChoices bool, value CacheValue) {
+	if includesChoices && len(value.choices) > 0 {
+		lastChoice := value.choices[len(value.choices) - 1]
+		cache.choice.Set(i, j, float64(lastChoice))
+		cache.cost.Set(i, j, value.cost)
+	}
+	if !includesChoices {
+		cache.cost.Set(i, j, value.cost)
 	}
 }
 
 
-func getCost(path *mat64.Dense, start int, stop int, cache *syncmap.Map) float64 {
+func getCost(path *mat64.Dense, start int, stop int, cache *Cache) float64 {
 
 	// check if return value has been cached
-	value, ok := load(cache, start, stop, true)
+	value, ok := load(cache, start, stop, false)
 	if ok {
 		return value.cost
 	}
@@ -125,15 +137,14 @@ func getCost(path *mat64.Dense, start int, stop int, cache *syncmap.Map) float64
 		}
 		cost += math.Sqrt(diffsSq)
 	}
-	store(cache, start, stop, true, CacheValue{nil, cost})
+	store(cache, start, stop, false, CacheValue{nil, cost})
 	return cost
 }
 
-func _bestChoice(nChoices int, path *mat64.Dense, start int,
-	cache *syncmap.Map) CacheValue {
+func _bestChoice(nChoices int, path *mat64.Dense, start int, cache *Cache) CacheValue {
 
 	 //check if return value has been cached
-	value, ok := load(cache, nChoices, start, false)
+	value, ok := load(cache, nChoices, start, true)
 	if ok {
 		return value
 	}
@@ -160,7 +171,8 @@ func _bestChoice(nChoices int, path *mat64.Dense, start int,
 	var group sync.WaitGroup
 	for i:= 0; i < runtime.NumCPU(); i++ {
 		group.Add(1)
-		go func() {
+		//go func() {
+		func() {
 			defer group.Done()
 			for j := range indices {
 				sliceAfter := _bestChoice(nChoices-1, path, j, cache)
@@ -174,19 +186,27 @@ func _bestChoice(nChoices int, path *mat64.Dense, start int,
 	}
 	group.Wait()
 	value = CacheValue{bestChoices, minCost}
-	store(cache, start, stop, false, value)
+	store(cache, start, stop, true, value)
 	return value
 }
 
-func bestChoice(nChoices int, path *mat64.Dense) ([]int, float64) {
-	value := _bestChoice(nChoices, path, 0, &syncmap.Map{})
-	return value.choices, value.cost
+func bestChoice(nChoices int, path *mat64.Dense) (float64, []int) {
+	pathLen, _ := path.Dims()
+	cache := Cache{}
+	cache.cost = mat64.NewDense(pathLen, pathLen + 1, nil)
+	cache.cost.Scale(INF, cache.cost)
+	cache.choice = mat64.NewDense(pathLen, pathLen + 1, nil)
+	cache.choice.Scale(INF, cache.cost)
+	value := _bestChoice(nChoices, path, 0, &cache)
+	fmt.Println(mat64.Formatted(cache.choice))
+	fmt.Println(mat64.Formatted(cache.cost))
+	return value.cost, reverse(value.choices)
 }
 
 func main() {
 	rand.Seed(0)
-	walk := simpleRandomWalk(20)
-	choices, cost := bestChoice(7, walk)
+	walk := simpleRandomWalk(7)
+	choices, cost := bestChoice(3, walk)
 	fmt.Println(mat64.Formatted(walk.T()))
 	fmt.Println(choices)
 	fmt.Println(cost)
