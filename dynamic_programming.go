@@ -100,13 +100,13 @@ func getCost(path *mat64.Dense, start int, stop int, cache *syncmap.Map) float64
 func _bestChoice(nChoices int, path *mat64.Dense, start int, stop int,
 	cache *syncmap.Map) CacheValue {
 
-	key := hashCode(start, stop, nChoices)
+	//key := hashCode(start, stop, nChoices)
 
 	// check if return value has been cached
-	value, ok := cache.Load(key)
-	if ok {
-		return value.(CacheValue)
-	}
+	//value, ok := cache.Load(key)
+	//if ok {
+	//	return value.(CacheValue)
+	//}
 
 	// if not cached, calculate
 	if nChoices == 0 { // running out of choices is terminal condition
@@ -132,9 +132,10 @@ func _bestChoice(nChoices int, path *mat64.Dense, start int, stop int,
 	for i := start + 1; i < stop; i++ {
 		<-sem
 	}
-	value = CacheValue{bestChoices, minCost}
-	cache.Store(key, value) // add return value to cache
-	return value.(CacheValue)
+	//value = CacheValue{bestChoices, minCost}
+	//cache.Store(key, value) // add return value to cache
+	//return value.(CacheValue)
+	return CacheValue{bestChoices, minCost}
 }
 
 func bestChoice(nChoices int, path *mat64.Dense) ([]int, float64) {
