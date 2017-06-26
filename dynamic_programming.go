@@ -81,8 +81,8 @@ var cacheSize uint32 = 0
 
 const CACHE_LIMIT uint32 = 1e6
 
-func load(cache *syncmap.Map, key string) (CacheValue, bool) {
-	value, ok := cache.Load(key)
+func load(cache *syncmap.Map, a int, b int, getCost bool) (CacheValue, bool) {
+	value, ok := cache.Load(hashCode(a, b, getCost))
 	if ok {
 		return value.(CacheValue), ok
 	} else {
@@ -90,9 +90,9 @@ func load(cache *syncmap.Map, key string) (CacheValue, bool) {
 	}
 }
 
-func store(cache *syncmap.Map, key string, value CacheValue) {
+func store(cache *syncmap.Map, a int, b int, isCostValue bool, value CacheValue) {
 	if cacheSize < CACHE_LIMIT {
-		cache.Store(key, value) // add return value to cache
+		cache.Store(hashCode(a, b, isCostValue), value) // add return value to cache
 		atomic.AddUint32(&cacheSize, 1)
 	} else {
 		fmt.Println("Cache is tapped.")
@@ -101,10 +101,9 @@ func store(cache *syncmap.Map, key string, value CacheValue) {
 
 
 func getCost(path *mat64.Dense, start int, stop int, cache *syncmap.Map) float64 {
-	key := hashCode(start, stop, true)
 
 	// check if return value has been cached
-	value, ok := load(cache, key)
+	value, ok := load(cache, start, stop, true)
 	if ok {
 		return value.cost
 	}
@@ -126,17 +125,15 @@ func getCost(path *mat64.Dense, start int, stop int, cache *syncmap.Map) float64
 		}
 		cost += math.Sqrt(diffsSq)
 	}
-	store(cache, key, CacheValue{nil, cost})
+	store(cache, start, stop, true, CacheValue{nil, cost})
 	return cost
 }
 
 func _bestChoice(nChoices int, path *mat64.Dense, start int,
 	cache *syncmap.Map) CacheValue {
 
-	key := hashCode(nChoices, start, false)
-
 	 //check if return value has been cached
-	value, ok := load(cache, key)
+	value, ok := load(cache, nChoices, start, false)
 	if ok {
 		return value
 	}
@@ -177,7 +174,7 @@ func _bestChoice(nChoices int, path *mat64.Dense, start int,
 	}
 	group.Wait()
 	value = CacheValue{bestChoices, minCost}
-	store(cache, key, value)
+	store(cache, start, stop, false, value)
 	return value
 }
 
