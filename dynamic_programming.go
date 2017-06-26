@@ -117,7 +117,7 @@ func _bestChoice(nChoices int, path *mat64.Dense, start int, stop int,
 	minCost := math.Inf(1)
 	var bestChoices []int
 
-	sem := make(chan bool, stop-start)
+	//sem := make(chan bool, stop-start)
 	for i := start + 1; i < stop; i++ {
 		go func(i int) {
 			sliceAfter := _bestChoice(nChoices-1, path, i, stop, cache)
