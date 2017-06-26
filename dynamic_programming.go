@@ -67,8 +67,8 @@ func reverse(numbers []int) []int {
 	return numbers
 }
 
-func hashCode(a int, b int, nChoices ...int) string {
-	return fmt.Sprint(a, b, nChoices)
+func hashCode(a int, b int, getCost bool) string {
+	return fmt.Sprint(a, b, getCost)
 }
 
 type CacheValue struct {
@@ -76,10 +76,19 @@ type CacheValue struct {
 	cost    float64
 }
 
-type Cache syncmap.Map
+type Cache *syncmap.Map
 var cacheSize uint32 = 0
 
 const CACHE_LIMIT uint32 = 1e6
+
+func load(cache *syncmap.Map, key string) (CacheValue, bool) {
+	value, ok := cache.Load(key)
+	if ok {
+		return value.(CacheValue), ok
+	} else {
+		return CacheValue{}, ok
+	}
+}
 
 func store(cache *syncmap.Map, key string, value CacheValue) {
 	if cacheSize < CACHE_LIMIT {
@@ -92,12 +101,12 @@ func store(cache *syncmap.Map, key string, value CacheValue) {
 
 
 func getCost(path *mat64.Dense, start int, stop int, cache *syncmap.Map) float64 {
-	key := hashCode(start, stop)
+	key := hashCode(start, stop, true)
 
 	// check if return value has been cached
-	value, ok := cache.Load(key)
+	value, ok := load(cache, key)
 	if ok {
-		return value.(CacheValue).cost
+		return value.cost
 	}
 
 	// check that stop and start haven't gotten goofed up
@@ -121,16 +130,18 @@ func getCost(path *mat64.Dense, start int, stop int, cache *syncmap.Map) float64
 	return cost
 }
 
-func _bestChoice(nChoices int, path *mat64.Dense, start int, stop int,
+func _bestChoice(nChoices int, path *mat64.Dense, start int,
 	cache *syncmap.Map) CacheValue {
 
-	key := hashCode(start, stop, nChoices)
+	key := hashCode(nChoices, start, false)
 
 	 //check if return value has been cached
-	value, ok := cache.Load(key)
+	value, ok := load(cache, key)
 	if ok {
-		return value.(CacheValue)
+		return value
 	}
+
+	stop, _ := path.Dims()
 
 	// if not cached, calculate
 	if nChoices == 0 { // running out of choices is terminal condition
@@ -155,7 +166,7 @@ func _bestChoice(nChoices int, path *mat64.Dense, start int, stop int,
 		go func() {
 			defer group.Done()
 			for j := range indices {
-				sliceAfter := _bestChoice(nChoices-1, path, j, stop, cache)
+				sliceAfter := _bestChoice(nChoices-1, path, j, cache)
 				cost := getCost(path, start, j, cache) + sliceAfter.cost
 				if cost < minCost {
 					minCost = cost
@@ -166,21 +177,21 @@ func _bestChoice(nChoices int, path *mat64.Dense, start int, stop int,
 	}
 	group.Wait()
 	value = CacheValue{bestChoices, minCost}
-	store(cache, key, value.(CacheValue))
-	return value.(CacheValue)
+	store(cache, key, value)
+	return value
 }
 
 func bestChoice(nChoices int, path *mat64.Dense) ([]int, float64) {
-	size, _ := path.Dims()
-	value := _bestChoice(nChoices, path, 0, size, &syncmap.Map{})
+	value := _bestChoice(nChoices, path, 0, &syncmap.Map{})
 	return value.choices, value.cost
 }
 
 func main() {
 	rand.Seed(0)
-	walk := simpleRandomWalk(26)
-	choices, _ := bestChoice(7, walk)
+	walk := simpleRandomWalk(20)
+	choices, cost := bestChoice(7, walk)
 	fmt.Println(mat64.Formatted(walk.T()))
 	fmt.Println(choices)
+	fmt.Println(cost)
 	fmt.Println(cacheSize)
 }
