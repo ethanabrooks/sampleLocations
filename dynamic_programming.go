@@ -6,6 +6,8 @@ import (
 	"golang.org/x/sync/syncmap"
 	"math"
 	"math/rand"
+	"sync"
+	"runtime"
 )
 
 func randNormVector(size int) *mat64.Vector {
@@ -68,13 +70,13 @@ type CacheValue struct {
 type Cache syncmap.Map
 
 func getCost(path *mat64.Dense, start int, stop int, cache *syncmap.Map) float64 {
-	//key := hashCode(start, stop)
+	key := hashCode(start, stop)
 
 	// check if return value has been cached
-	//value, ok := cache.Load(key)
-	//if ok {
-	//	return value.(CacheValue).cost
-	//}
+	value, ok := cache.Load(key)
+	if ok {
+		return value.(CacheValue).cost
+	}
 
 	// check that stop and start haven't gotten goofed up
 	size, dim := path.Dims()
@@ -93,20 +95,20 @@ func getCost(path *mat64.Dense, start int, stop int, cache *syncmap.Map) float64
 		}
 		cost += math.Sqrt(diffsSq)
 	}
-	//cache.Store(key, CacheValue{nil, cost}) // cache result
+	cache.Store(key, CacheValue{nil, cost}) // cache result
 	return cost
 }
 
 func _bestChoice(nChoices int, path *mat64.Dense, start int, stop int,
 	cache *syncmap.Map) CacheValue {
 
-	//key := hashCode(start, stop, nChoices)
+	key := hashCode(start, stop, nChoices)
 
-	// check if return value has been cached
-	//value, ok := cache.Load(key)
-	//if ok {
-	//	return value.(CacheValue)
-	//}
+	 //check if return value has been cached
+	value, ok := cache.Load(key)
+	if ok {
+		return value.(CacheValue)
+	}
 
 	// if not cached, calculate
 	if nChoices == 0 { // running out of choices is terminal condition
@@ -118,24 +120,38 @@ func _bestChoice(nChoices int, path *mat64.Dense, start int, stop int,
 	var bestChoices []int
 
 	//sem := make(chan bool, stop-start)
-	for i := start + 1; i < stop; i++ {
-		go func(i int) {
-			sliceAfter := _bestChoice(nChoices-1, path, i, stop, cache)
-			cost := getCost(path, start, i, cache) + sliceAfter.cost
-			if cost < minCost {
-				minCost = cost
-				bestChoices = append(sliceAfter.choices, i)
+	indices := make(chan int)
+	go func() {
+		for i := start + 1; i < stop; i++ {
+			indices <- i
+		}
+		close(indices)
+	}()
+
+	var group sync.WaitGroup
+	for i:= 0; i < runtime.NumCPU(); i++ {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			for j := range indices {
+				sliceAfter := _bestChoice(nChoices-1, path, j, stop, cache)
+				cost := getCost(path, start, j, cache) + sliceAfter.cost
+				if cost < minCost {
+					minCost = cost
+					bestChoices = append(sliceAfter.choices, j)
+				}
 			}
-			sem <- true
-		}(i)
+			//sem <- true
+		}()
 	}
-	for i := start + 1; i < stop; i++ {
-		<-sem
-	}
-	//value = CacheValue{bestChoices, minCost}
-	//cache.Store(key, value) // add return value to cache
-	//return value.(CacheValue)
-	return CacheValue{bestChoices, minCost}
+	group.Wait()
+	//for i := start + 1; i < stop; i++ {
+	//	<-sem
+	//}
+	value = CacheValue{bestChoices, minCost}
+	cache.Store(key, value) // add return value to cache
+	return value.(CacheValue)
+	//return CacheValue{bestChoices, minCost}
 }
 
 func bestChoice(nChoices int, path *mat64.Dense) ([]int, float64) {
