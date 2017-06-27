@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"sync"
 	"runtime"
+	"sort"
 )
 
 
@@ -184,7 +185,6 @@ func _bestChoice(nChoices int, path *mat64.Dense, start int, cache *Cache) CostC
 	// find the choice of i that minimizes cost
 	minCost := math.Inf(1)
 	var bestChoices []int
-	lock := sync.Mutex{}
 
 	indices := make(chan int)
 	go func() {
@@ -202,12 +202,10 @@ func _bestChoice(nChoices int, path *mat64.Dense, start int, cache *Cache) CostC
 			for j := range indices {
 				sliceAfter := _bestChoice(nChoices-1, path, j, cache)
 				cost := getCost(path, start, j, cache) + sliceAfter.cost
-				lock.Lock()
 				if cost < minCost {
 					minCost = cost
 					bestChoices = append(sliceAfter.choices, j)
 				}
-				lock.Unlock()
 			}
 		}()
 	}
@@ -232,15 +230,16 @@ func bestChoice(nChoices int, path *mat64.Dense) (float64, []int) {
 	cache.costWithChoices =	newCacheMatrix(nChoices + 1, pathLen + 1)
 
 	value := _bestChoice(nChoices, path, 0, &cache)
-	return value.cost, reverse(value.choices)
+	sort.Ints(value.choices)
+	return value.cost, value.choices
 }
 
 func main() {
 	rand.Seed(5)
-	walk := simpleRandomWalk(400)
+	walk := simpleRandomWalk(5)
 	//walk := mat64.NewDense(5, 1, []float64{0, 4, 5, 6, 5})
 	fmt.Println(mat64.Formatted(walk.T()))
-	cost,choices  := bestChoice(100, walk)
+	cost,choices  := bestChoice(3, walk)
 	fmt.Println(choices)
 	fmt.Println(cost)
 }
