@@ -5,8 +5,6 @@ import (
 	"github.com/gonum/matrix/mat64"
 	"math"
 	"math/rand"
-	"sync"
-	"runtime"
 	"sort"
 )
 
@@ -58,46 +56,27 @@ func randomWalk(steps int, dim int) *mat64.Dense {
 	return positions
 }
 
-func reverse(numbers []int) []int {
-	for i := 0; i < len(numbers)/2; i++ {
-		j := len(numbers) - i - 1
-		numbers[i], numbers[j] = numbers[j], numbers[i]
-	}
-	return numbers
-}
-
 type CostChoicesPair struct {
 	choices []int
 	cost    float64
 }
 
 type Cache struct {
-	getCostLock     sync.Mutex
-	bestChoiceLock  sync.Mutex
 	cost            *mat64.Dense
 	choice          *mat64.Dense
 	costWithChoices *mat64.Dense
 }
 
 func loadCost(cache *Cache, start int, stop int) (float64, bool) {
-	cache.getCostLock.Lock()
-	defer cache.getCostLock.Unlock()
-
 	cost := cache.cost.At(start, stop)
 	return cost, !math.IsNaN(cost)
 }
 
 func storeCost(cache *Cache, start int, stop int, cost float64) {
-	cache.getCostLock.Lock()
-	defer cache.getCostLock.Unlock()
-
 	cache.cost.Set(start, stop, cost)
 }
 
 func loadBestChoice(cache *Cache, nChoices int, start int) (CostChoicesPair, bool) {
-	cache.bestChoiceLock.Lock()
-	defer cache.bestChoiceLock.Unlock()
-
 	choice := cache.choice.At(nChoices, start)
 	cost := cache.costWithChoices.At(nChoices, start)
 	switch {
@@ -106,12 +85,15 @@ func loadBestChoice(cache *Cache, nChoices int, start int) (CostChoicesPair, boo
 	case !math.IsNaN(choice) && !math.IsNaN(cost):
 
 		// walk backward through cache selecting best choices
-		var choices []int
-		for choiceNum := nChoices - 1; choiceNum > 0; choiceNum-- {
-			choice = cache.choice.At(choiceNum, int(choice))
+		choices := []int{int(choice)}
+		for choiceNum := nChoices - 1; choiceNum > 0; choiceNum-- { // (nChoices...0)
+
+			choice := cache.choice.At(choiceNum, int(choice))
 			if math.IsNaN(choice) {
-				break
+
+				break // this happens when we go to the far right edge of cache.choice
 			}
+
 			choices = append(choices, int(choice))
 		}
 		return CostChoicesPair{choices, cost}, true
@@ -121,9 +103,6 @@ func loadBestChoice(cache *Cache, nChoices int, start int) (CostChoicesPair, boo
 }
 
 func storeBestChoice(cache *Cache, nChoices int, start int, value CostChoicesPair) {
-	cache.bestChoiceLock.Lock()
-	defer cache.bestChoiceLock.Unlock()
-
 	if len(value.choices) > 0 {
 		lastChoice := value.choices[len(value.choices) - 1]
 		cache.choice.Set(nChoices, start, float64(lastChoice))
@@ -171,45 +150,28 @@ func _bestChoice(nChoices int, path *mat64.Dense, start int, cache *Cache) CostC
 
 	stop, _ := path.Dims()
 
-	// running out of choices is terminal condition
+	// terminal: ran out of choices
 	if nChoices == 0 {
 		return CostChoicesPair{nil, getCost(path, start, stop, cache)}
 	}
 
-	// path is empty is terminal
-	if stop - start <= 1 {
-		return CostChoicesPair{nil, 0}
+	// terminal: path is empty
+	if stop == start {
+		return CostChoicesPair{[]int{stop - 1}, 0}
 	}
-
 
 	// find the choice of i that minimizes cost
 	minCost := math.Inf(1)
 	var bestChoices []int
-
-	indices := make(chan int)
-	go func() {
-		for i := start + 1; i < stop; i++ {
-			indices <- i
+	for i := start; i < stop; i++ {
+		sliceAfter := _bestChoice(nChoices-1, path, i, cache)
+		cost := getCost(path, start, i, cache) + sliceAfter.cost
+		if cost < minCost {
+			minCost = cost
+			bestChoices = append(sliceAfter.choices, i)
 		}
-		close(indices)
-	}()
-
-	var group sync.WaitGroup
-	for i:= 0; i < runtime.NumCPU(); i++ {
-		group.Add(1)
-		func() {
-			defer group.Done()
-			for j := range indices {
-				sliceAfter := _bestChoice(nChoices-1, path, j, cache)
-				cost := getCost(path, start, j, cache) + sliceAfter.cost
-				if cost < minCost {
-					minCost = cost
-					bestChoices = append(sliceAfter.choices, j)
-				}
-			}
-		}()
 	}
-	group.Wait()
+
 	value = CostChoicesPair{bestChoices, minCost}
 	storeBestChoice(cache, nChoices, start, value)
 	return value
@@ -236,10 +198,9 @@ func bestChoice(nChoices int, path *mat64.Dense) (float64, []int) {
 
 func main() {
 	rand.Seed(5)
-	walk := simpleRandomWalk(5)
-	//walk := mat64.NewDense(5, 1, []float64{0, 4, 5, 6, 5})
+	walk := simpleRandomWalk(300)
 	fmt.Println(mat64.Formatted(walk.T()))
-	cost,choices  := bestChoice(3, walk)
+	cost,choices  := bestChoice(40, walk)
 	fmt.Println(choices)
 	fmt.Println(cost)
 }
