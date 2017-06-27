@@ -64,7 +64,7 @@ func randomWalk(steps int, dim int) *mat64.Dense {
 }
 
 // Reverses an array of ints. Copied from the go cookbook:
-// http://golangcookbook.com/chapters/arrays/reverse/
+// http://golangcookbook.com/chapters/arrays/reverse/.
 func reverse(numbers []int) []int {
 	for i := 0; i < len(numbers)/2; i++ {
 		j := len(numbers) - i - 1
@@ -73,83 +73,53 @@ func reverse(numbers []int) []int {
 	return numbers
 }
 
-type cache struct {
-	cost            *mat64.Dense
-	choice          *mat64.Dense
-	costWithChoices *mat64.Dense
-}
+// calculate 'cost'
+func getCost(path *mat64.Dense, start int, stop int, cache *Cache) float64 {
 
-func loadCost(cache *cache, start int, stop int) (float64, bool) {
-	cost := cache.cost.At(start, stop)
-	return cost, !math.IsNaN(cost)
-}
-
-func storeCost(cache *cache, start int, stop int, cost float64) {
-	cache.cost.Set(start, stop, cost)
-}
-
-func loadBestChoice(cache *cache, nChoices int,
-	start int) (int, float64, bool) {
-	choice := cache.choice.At(nChoices, start)
-	cost := cache.costWithChoices.At(nChoices, start)
-	switch {
-	case math.IsNaN(choice) && math.IsNaN(cost):
-		return 0, 0, false // cache miss
-	case !math.IsNaN(choice) && !math.IsNaN(cost):
-		return int(choice), cost, true
-	default:
-		panic("Caches out of sync")
-	}
-}
-
-func storeBestChoice(cache *cache, nChoices int, start int, choice int, cost float64) {
-	cache.choice.Set(nChoices, start, float64(choice))
-	cache.costWithChoices.Set(nChoices, start, cost)
-}
-
-func getCost(path *mat64.Dense, start int, stop int, cache *cache) float64 {
-
-	// check that stop and start haven't gotten goofed up
+	// Check validity of parameters.
 	size, dim := path.Dims()
 	if start < 0 || stop > size {
 		panic(fmt.Sprintf("Start (%d) must be positive and stop (%d) must be less "+
 			"than path length (%d).", start, stop, size))
 	}
 
-	// check if return cost has been cached
+	// Check if return cost has been cached.
 	cost, ok := loadCost(cache, start, stop)
 	if ok {
 		return cost
 	}
 
-	// accumulate cost of path
+	// terminal condition: stop is next to start
 	if stop - start <= 1 {
 		return 0.0
-	} else {
-		sqDist := 0.0
-		for i := 0; i < dim; i++ {
-			diff := path.At(start + 1, i) - path.At(start, i)
-			sqDist += math.Pow(diff, 2)
-		}
-		cost := math.Sqrt(sqDist) + getCost(path, start+1, stop, cache)
-		storeCost(cache, start, stop, cost)
-		return cost
-
 	}
+
+	// Calculate euclidean distance between row at `start` and row at `start+1`.
+	sqDistance := 0.0
+	for i := 0; i < dim; i++ {
+		sqDistance += math.Pow(path.At(start + 1, i) - path.At(start, i), 2)
+	}
+	euclideanDistance := math.Sqrt(sqDistance)
+	cost = euclideanDistance + getCost(path, start+1, stop, cache)
+	storeCost(cache, start, stop, cost)
+	return cost
 }
 
-
+// Generates a new `height` x `width` matrix with all values set to NaN
 func newCacheMatrix(height int, width int) *mat64.Dense {
 	matrix := mat64.NewDense(height, width, nil)
 	matrix.Scale(math.NaN(), matrix)
 	return matrix
 }
 
+// Returns the tuple `(choice, cost)` where choice is the best next choice for
+// `path[start:]` given `nChoices` remaining, and `cost` is the cost for this
+// choice.
 func nextChoice(nChoices int, path *mat64.Dense, start int,
-	cache *cache) (int, float64) {
+	cache *Cache) (int, float64) {
 	stop, _ := path.Dims()
 
-	// check validity of args
+	// Check validity of args.
 	if start < 0 || start >= stop {
 		panic(fmt.Sprintf("Start (%d) must be positive and less than"+
 			"path length (%d)", start, stop))
@@ -158,19 +128,19 @@ func nextChoice(nChoices int, path *mat64.Dense, start int,
 		panic("`nChoices` must be greater than 0")
 	}
 
-	// check if return value has been cached
+	// Check if return value has been cached.
 	choice, cost, ok := loadBestChoice(cache, nChoices, start)
 	if ok {
 		return choice, cost
 	}
 
-	// find the choice of i that minimizes cost
+	// Find the choice of `i` that minimizes cost.
 	minCost := math.Inf(1)
 	var bestChoice int
 	for i := start; i < stop; i++ { // [start, stop)
 		costBefore := getCost(path, start, i, cache)
 
-		// costAfter value depends on whether there are choices remaining
+		// `costAfter` value depends on whether there are choices remaining.
 		var costAfter float64
 		if nChoices == 1 {
 			costAfter = getCost(path, i, stop, cache)
@@ -184,28 +154,36 @@ func nextChoice(nChoices int, path *mat64.Dense, start int,
 			bestChoice = i
 		}
 	}
-
 	storeBestChoice(cache, nChoices, start, bestChoice, minCost)
 	return bestChoice, minCost
-
 }
 
+// Returns the tuple `(choices, cost)` where choice is the list of choices
+// (length `nChoices`) that minimizes the cost of `path`. Values from
+// `nextChoice` and `getCost` are cached in `cache`.
 func bestChoicesWithCache(nChoices int, path *mat64.Dense, start int,
-	cache *cache) ([]int, float64) {
+	cache *Cache) ([]int, float64) {
 	stop, _ := path.Dims()
 	if nChoices == 0 {
 		return []int{}, getCost(path, start, stop, cache)
 	}
-	nextChoice, cost := nextChoice(nChoices, path, start, cache)
-	subsChoices, _ := bestChoicesWithCache(nChoices  - 1, path, nextChoice, cache)
-	return append(subsChoices, nextChoice), cost
+
+	// Next choice.
+	choice, cost := nextChoice(nChoices, path, start, cache)
+
+	// Subsequent choices.
+	otherChoices, _ := bestChoicesWithCache(nChoices  - 1, path, choice, cache)
+
+	return append(otherChoices, choice), cost
 }
 
+// Returns the tuple `(choices, cost)` where choice is the list of choices
+// (length `nChoices`) that minimizes the cost of `path`.
 func bestChoices(nChoices int, path *mat64.Dense) ([]int, float64) {
 	pathLen, _ := path.Dims()
-	cache := cache{}
+	cache := Cache{}
 
-	// store the costs for all intervals [i:j] in path.
+	// Store the costs for all intervals [i:j] in path.
 	cache.cost = newCacheMatrix(pathLen, pathLen+1)
 
 	// Store the most recent choice for choice number i and path interval starting
@@ -216,7 +194,7 @@ func bestChoices(nChoices int, path *mat64.Dense) ([]int, float64) {
 	// starting at j.
 	cache.costWithChoices = newCacheMatrix(nChoices+1, pathLen+1)
 
-	// actual computation
+	// Actual computation.
 	choices, cost := bestChoicesWithCache(nChoices, path, 0, &cache)
 	return reverse(choices), cost
 }
