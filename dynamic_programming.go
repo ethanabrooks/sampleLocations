@@ -117,20 +117,32 @@ func getCost(path *mat64.Dense, start int, stop int, cache *Cache) float64 {
 	}
 
 	// accumulate cost of path
-	if start + 1 == 0 {
+	if stop - start <= 1 {
 		return 0.0
-	}
-	cost = 0.0
-	for i := start + 1; i < stop; i++ {
-		diffsSq := 0.0
-		for j := 0; j < dim; j++ {
-			diff := path.At(i, j) - path.At(start, j)
-			diffsSq += math.Pow(diff, 2)
+	} else {
+		sqDiffs := 0.0
+		for i := 0; i < dim; i++ {
+			diff := path.At(start + 1, i) - path.At(start, i)
+			sqDiffs += math.Pow(diff, 2)
 		}
-		cost += math.Sqrt(diffsSq)
+		cost := math.Sqrt(sqDiffs) + getCost(path, start+1, stop, cache)
+		storeCost(cache, start, stop, cost)
+		return cost
+
 	}
-	storeCost(cache, start, stop, cost)
-	return cost
+	//cost = 0.0
+	//
+	//for i := start + 1; i < stop; i++ {
+	//	diffsSq := 0.0
+	//	for j := 0; j < dim; j++ {
+	//		diff := path.At(i, j) - path.At(start, j)
+	//		diffsSq += math.Pow(diff, 2)
+	//	}
+	//	cost += math.Sqrt(diffsSq)
+	//}
+	//storeCost(cache, start, stop, cost)
+	//fmt.Println(mat64.Formatted(cache.cost))
+	//return cost
 }
 
 
@@ -215,14 +227,11 @@ func bestChoices(nChoices int, path *mat64.Dense) (float64, []int) {
 	return cost, reverse(choices)
 }
 
-// TODO: why are the values not in sorted order?
-// TODO: why are values repeated even when cost is not zero?
-
 func main() {
 	rand.Seed(2)
-	walk := simpleRandomWalk(400)
+	walk := simpleRandomWalk(1000)
 	fmt.Println(mat64.Formatted(walk.T()))
-	cost, choices := bestChoices(200, walk)
+	cost, choices := bestChoices(500, walk)
 	fmt.Println(choices)
 	fmt.Println(cost)
 }
