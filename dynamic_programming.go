@@ -197,7 +197,7 @@ func _bestChoice(nChoices int, path *mat64.Dense, start int, cache *Cache) CostC
 	var group sync.WaitGroup
 	for i:= 0; i < runtime.NumCPU(); i++ {
 		group.Add(1)
-		go func() {
+		func() {
 			defer group.Done()
 			for j := range indices {
 				sliceAfter := _bestChoice(nChoices-1, path, j, cache)
@@ -229,7 +229,6 @@ func bestChoice(nChoices int, path *mat64.Dense) (float64, []int) {
 
 	cache.cost = newCacheMatrix(pathLen, pathLen + 1)
 	cache.choice = newCacheMatrix(nChoices + 1, pathLen + 1)
-	fmt.Println(cache.choice.Dims())
 	cache.costWithChoices =	newCacheMatrix(nChoices + 1, pathLen + 1)
 
 	value := _bestChoice(nChoices, path, 0, &cache)
@@ -237,11 +236,11 @@ func bestChoice(nChoices int, path *mat64.Dense) (float64, []int) {
 }
 
 func main() {
-	rand.Seed(4)
-	walk := simpleRandomWalk(50)
+	rand.Seed(5)
+	walk := simpleRandomWalk(400)
 	//walk := mat64.NewDense(5, 1, []float64{0, 4, 5, 6, 5})
 	fmt.Println(mat64.Formatted(walk.T()))
-	cost,choices  := bestChoice(25, walk)
+	cost,choices  := bestChoice(100, walk)
 	fmt.Println(choices)
 	fmt.Println(cost)
 }
