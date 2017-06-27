@@ -108,9 +108,10 @@ func loadBestChoice(cache *Cache, nChoices int, start int) (CostChoicesPair, boo
 		var choices []int
 		for choiceNum := nChoices - 1; choiceNum > 0; choiceNum-- {
 			choice = cache.choice.At(choiceNum, int(choice))
-			if !math.IsNaN(choice) {
-				choices = append(choices, int(choice))
+			if math.IsNaN(choice) {
+				break
 			}
+			choices = append(choices, int(choice))
 		}
 		return CostChoicesPair{choices, cost}, true
 	default:
@@ -227,7 +228,8 @@ func bestChoice(nChoices int, path *mat64.Dense) (float64, []int) {
 	cache := Cache{}
 
 	cache.cost = newCacheMatrix(pathLen, pathLen + 1)
-	cache.choice = newCacheMatrix(nChoices + 1, pathLen)
+	cache.choice = newCacheMatrix(nChoices + 1, pathLen + 1)
+	fmt.Println(cache.choice.Dims())
 	cache.costWithChoices =	newCacheMatrix(nChoices + 1, pathLen + 1)
 
 	value := _bestChoice(nChoices, path, 0, &cache)
@@ -235,11 +237,11 @@ func bestChoice(nChoices int, path *mat64.Dense) (float64, []int) {
 }
 
 func main() {
-	rand.Seed(3)
-	walk := simpleRandomWalk(5)
+	rand.Seed(4)
+	walk := simpleRandomWalk(50)
 	//walk := mat64.NewDense(5, 1, []float64{0, 4, 5, 6, 5})
 	fmt.Println(mat64.Formatted(walk.T()))
-	cost,choices  := bestChoice(2, walk)
+	cost,choices  := bestChoice(25, walk)
 	fmt.Println(choices)
 	fmt.Println(cost)
 }
