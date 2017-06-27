@@ -7,6 +7,7 @@ import (
 	"math/rand"
 )
 
+// Generates a random vector size `int`.
 func randNormVector(size int) *mat64.Vector {
 	vector := mat64.NewVector(size, nil)
 	for i := 0; i < size; i++ {
@@ -15,13 +16,20 @@ func randNormVector(size int) *mat64.Vector {
 	return vector
 }
 
+// Sets row `i` of `m` to the values in `v`.
 func setRow(i int, m *mat64.Dense, v *mat64.Vector) {
-	_, dim := m.Dims()
-	for j := 0; j < dim; j++ {
+	dimV, _ := v.Dims()
+	sizeM, dimM := m.Dims()
+	if dimV != dimM {
+		panic(fmt.Sprintf("`v` is size %d. It must be size %d because `m` is %d x " +
+			"%d.", dimV, dimM, sizeM, dimM))
+	}
+	for j := 0; j < dimM; j++ {
 		m.Set(i, j, v.At(j, 0))
 	}
 }
 
+// Generates a random path length `steps` containing all whole number values.
 func simpleRandomWalk(steps int) *mat64.Dense {
 	positions := mat64.NewDense(steps, 1, nil)
 	vel := 0
@@ -38,6 +46,7 @@ func simpleRandomWalk(steps int) *mat64.Dense {
 	return positions
 }
 
+// Generates a random path with dimensions `steps` x `dim`.
 func randomWalk(steps int, dim int) *mat64.Dense {
 	positions := mat64.NewDense(steps, dim, nil)
 	newPos := mat64.NewVector(dim, nil)
@@ -54,6 +63,8 @@ func randomWalk(steps int, dim int) *mat64.Dense {
 	return positions
 }
 
+// Reverses an array of ints. Copied from the go cookbook:
+// http://golangcookbook.com/chapters/arrays/reverse/
 func reverse(numbers []int) []int {
 	for i := 0; i < len(numbers)/2; i++ {
 		j := len(numbers) - i - 1
@@ -62,22 +73,22 @@ func reverse(numbers []int) []int {
 	return numbers
 }
 
-type Cache struct {
+type cache struct {
 	cost            *mat64.Dense
 	choice          *mat64.Dense
 	costWithChoices *mat64.Dense
 }
 
-func loadCost(cache *Cache, start int, stop int) (float64, bool) {
+func loadCost(cache *cache, start int, stop int) (float64, bool) {
 	cost := cache.cost.At(start, stop)
 	return cost, !math.IsNaN(cost)
 }
 
-func storeCost(cache *Cache, start int, stop int, cost float64) {
+func storeCost(cache *cache, start int, stop int, cost float64) {
 	cache.cost.Set(start, stop, cost)
 }
 
-func loadBestChoice(cache *Cache, nChoices int,
+func loadBestChoice(cache *cache, nChoices int,
 	start int) (int, float64, bool) {
 	choice := cache.choice.At(nChoices, start)
 	cost := cache.costWithChoices.At(nChoices, start)
@@ -91,12 +102,12 @@ func loadBestChoice(cache *Cache, nChoices int,
 	}
 }
 
-func storeBestChoice(cache *Cache, nChoices int, start int, choice int, cost float64) {
+func storeBestChoice(cache *cache, nChoices int, start int, choice int, cost float64) {
 	cache.choice.Set(nChoices, start, float64(choice))
 	cache.costWithChoices.Set(nChoices, start, cost)
 }
 
-func getCost(path *mat64.Dense, start int, stop int, cache *Cache) float64 {
+func getCost(path *mat64.Dense, start int, stop int, cache *cache) float64 {
 
 	// check that stop and start haven't gotten goofed up
 	size, dim := path.Dims()
@@ -135,7 +146,7 @@ func newCacheMatrix(height int, width int) *mat64.Dense {
 }
 
 func nextChoice(nChoices int, path *mat64.Dense, start int,
-	cache *Cache) (int, float64) {
+	cache *cache) (int, float64) {
 	stop, _ := path.Dims()
 
 	// check validity of args
@@ -180,7 +191,7 @@ func nextChoice(nChoices int, path *mat64.Dense, start int,
 }
 
 func bestChoicesWithCache(nChoices int, path *mat64.Dense, start int,
-	cache *Cache) ([]int, float64) {
+	cache *cache) ([]int, float64) {
 	stop, _ := path.Dims()
 	if nChoices == 0 {
 		return []int{}, getCost(path, start, stop, cache)
@@ -192,7 +203,7 @@ func bestChoicesWithCache(nChoices int, path *mat64.Dense, start int,
 
 func bestChoices(nChoices int, path *mat64.Dense) ([]int, float64) {
 	pathLen, _ := path.Dims()
-	cache := Cache{}
+	cache := cache{}
 
 	// store the costs for all intervals [i:j] in path.
 	cache.cost = newCacheMatrix(pathLen, pathLen+1)
