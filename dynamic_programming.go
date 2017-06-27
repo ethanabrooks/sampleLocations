@@ -87,13 +87,7 @@ func loadBestChoice(cache *Cache, nChoices int, start int) (CostChoicesPair, boo
 		// walk backward through cache selecting best choices
 		choices := []int{int(choice)}
 		for choiceNum := nChoices - 1; choiceNum > 0; choiceNum-- { // (nChoices...0)
-
 			choice := cache.choice.At(choiceNum, int(choice))
-			if math.IsNaN(choice) {
-
-				break // this happens when we go to the far right edge of cache.choice
-			}
-
 			choices = append(choices, int(choice))
 		}
 		return CostChoicesPair{choices, cost}, true
@@ -157,7 +151,9 @@ func _bestChoice(nChoices int, path *mat64.Dense, start int, cache *Cache) CostC
 
 	// terminal: path is empty
 	if stop == start {
-		return CostChoicesPair{[]int{stop - 1}, 0}
+		pair := CostChoicesPair{[]int{stop - 1}, 0}
+		storeBestChoice(cache, nChoices, start, pair)
+		return pair
 	}
 
 	// find the choice of i that minimizes cost
@@ -198,9 +194,9 @@ func bestChoice(nChoices int, path *mat64.Dense) (float64, []int) {
 
 func main() {
 	rand.Seed(5)
-	walk := simpleRandomWalk(300)
+	walk := simpleRandomWalk(200)
 	fmt.Println(mat64.Formatted(walk.T()))
-	cost,choices  := bestChoice(40, walk)
+	cost,choices  := bestChoice(100, walk)
 	fmt.Println(choices)
 	fmt.Println(cost)
 }
