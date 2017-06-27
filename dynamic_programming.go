@@ -73,7 +73,7 @@ func reverse(numbers []int) []int {
 	return numbers
 }
 
-// calculate 'cost'
+// Calculates the sum of mean squared errors from the first point in the path.
 func getCost(path *mat64.Dense, start int, stop int, cache *Cache) float64 {
 
 	// Check validity of parameters.
@@ -201,9 +201,9 @@ func bestChoices(nChoices int, path *mat64.Dense) ([]int, float64) {
 
 func main() {
 	rand.Seed(11)
-	walk := simpleRandomWalk(5)
+	walk := simpleRandomWalk(5000)
 	fmt.Println(mat64.Formatted(walk.T()))
-	cost, choices := bestChoices(3, walk)
+	cost, choices := bestChoices(3000, walk)
 	fmt.Println(choices)
 	fmt.Println(cost)
 }
