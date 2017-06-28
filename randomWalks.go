@@ -1,12 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"github.com/gonum/matrix/mat64"
 	"math/rand"
+	"log"
 )
 
-// randNormVector generates a random vector size `int`.
+// RandNormVector generates a random vector size `int`.
 func randNormVector(size int) *mat64.Vector {
 	vector := mat64.NewVector(size, nil)
 	for i := 0; i < size; i++ {
@@ -15,21 +15,21 @@ func randNormVector(size int) *mat64.Vector {
 	return vector
 }
 
-// setRow sets row `i` of `m` to the values in `v`.
+// SetRow sets row `i` of `m` to the values in `v`.
 func setRow(i int, m *mat64.Dense, v *mat64.Vector) {
 	dimV, _ := v.Dims()
 	sizeM, dimM := m.Dims()
 	if dimV != dimM {
-		panic(fmt.Sprintf("`v` is size %d. " +
+		log.Fatalf("`v` is size %d. " +
 			"It must be size %d because `m` is %d x %d.",
-			dimV, dimM, sizeM, dimM))
+			dimV, dimM, sizeM, dimM)
 	}
 	for j := 0; j < dimM; j++ {
 		m.Set(i, j, v.At(j, 0))
 	}
 }
 
-// simpleRandomWalk generates a random path length `steps`
+// SimpleRandomWalk generates a random path length `steps`
 // containing all whole number values.
 func simpleRandomWalk(steps int) *mat64.Dense {
 	positions := mat64.NewDense(steps, 1, nil)
@@ -47,7 +47,7 @@ func simpleRandomWalk(steps int) *mat64.Dense {
 	return positions
 }
 
-// randomWalk generates a random path with dimensions `steps` x `dim`.
+// RandomWalk generates a random path with dimensions `steps` x `dim`.
 func randomWalk(steps int, dim int) *mat64.Dense {
 	positions := mat64.NewDense(steps, dim, nil)
 	newPos := mat64.NewVector(dim, nil)

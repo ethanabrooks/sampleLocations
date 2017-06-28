@@ -1,18 +1,21 @@
+/*
+SampleLocations takes a series of locations and chooses a subset of them which are
+most 'representative'. By this, we mean that if all locations besides the most
+representative were eliminated from the series, the deviation from the original
+series would be minimized. Here, we measure deviation in terms of mean squared error
+and error in terms of Euclidean distance. Also, there is no interpolation between
+locations in this model. This program uses dynamic programming to solve this problem.
+The time and space complexity of the model is O(n^2 + nm), where n is the number of
+locations in the series and m is the size of the subset, usually designated `nChoices`
+in the program.
+*/
 package main
-// sampleLocations takes a series of locations and chooses a subset of them which are
-// most 'representative'. By this, we mean that if all locations besides the most
-// representative were eliminated from the series, the deviation from the original
-// series would be minimized. Here, we measure deviation in terms of mean squared error
-// and error in terms of Euclidean distance. Also, there is no interpolation between
-// locations in this model. This program uses dynamic programming to solve this problem.
-// The time and space complexity of the model is O(n^2 + nm), where n is the number of
-// locations in the series and m is the size of the subset, usually designated `nChoices`
-// in the program.
 
 import (
 	"fmt"
 	"github.com/gonum/matrix/mat64"
 	"math"
+	"log"
 	"math/rand"
 )
 
@@ -25,14 +28,14 @@ func euclideanDistance(m *mat64.Dense, row1, row2 int) float64 {
 	return math.Sqrt(sqDistance)
 }
 
-// getCost calculates the sum of mean squared errors from the first point in the path.
+// GetCost calculates the sum of mean squared errors from the first point in the path.
 func getCost(path *mat64.Dense, start, stop int, cache *cache) float64 {
 
 	// Check validity of parameters.
 	size, _ := path.Dims()
 	if start < 0 || stop > size {
-		panic(fmt.Sprintf("Start (%d) must be positive and stop (%d) must be less "+
-			"than path length (%d).", start, stop, size))
+		log.Fatalf("Start (%d) must be positive and stop (%d) must be less than path length (%d).",
+			start, stop, size)
 	}
 
 	// Check if return cost has been cached.
@@ -51,20 +54,19 @@ func getCost(path *mat64.Dense, start, stop int, cache *cache) float64 {
 	return cost
 }
 
-// nextChoice returns the tuple `(choice, cost)` where choice is the best next choice for
+// NextChoice returns the tuple `(choice, cost)` where choice is the best next choice for
 // `path[start:]` given `nChoices` remaining, and `cost` is the cost for this
 // choice.
-func nextChoice(
-	nChoices int, path *mat64.Dense, start int, cache *cache) (int, float64) {
+func nextChoice(nChoices int, path *mat64.Dense, start int, cache *cache) (int, float64) {
 	stop, _ := path.Dims()
 
 	// Check validity of args.
 	if start < 0 || start >= stop {
-		panic(fmt.Sprintf("Start (%d) must be positive and less than"+
-			"path length (%d)", start, stop))
+		log.Fatalf("Start (%d) must be positive and less than path length (%d).",
+			start, stop)
 	}
 	if nChoices <= 0 {
-		panic("`nChoices` must be greater than 0")
+		log.Fatal("`nChoices` must be greater than 0.")
 	}
 
 	// Check if return value has been cached.
@@ -96,11 +98,10 @@ func nextChoice(
 	return bestChoice, minCost
 }
 
-// bestChoicesWithCache returns the tuple `(choices, cost)` where choice is
+// BestChoicesWithCache returns the tuple `(choices, cost)` where choice is
 // the list of choices (length `nChoices`) that minimizes the cost of `path`.
 // Values from `nextChoice` and `getCost` are cached in `cache`.
-func bestChoicesWithCache(
-	nChoices int, path *mat64.Dense, start int, cache *cache) ([]int, float64) {
+func bestChoicesWithCache(nChoices int, path *mat64.Dense, start int, cache *cache) ([]int, float64) {
 	stop, _ := path.Dims()
 	if nChoices == 0 {
 		return []int{}, getCost(path, start, stop, cache)
@@ -115,7 +116,7 @@ func bestChoicesWithCache(
 	return append(otherChoices, choice), cost
 }
 
-// reverse reverses an array of ints. Copied from the go cookbook:
+// Reverse reverses an array of ints. Copied from the go cookbook:
 // http://golangcookbook.com/chapters/arrays/reverse/.
 func reverse(numbers []int) []int {
 	for i := 0; i < len(numbers)/2; i++ {
@@ -135,10 +136,11 @@ func BestChoices(nChoices int, path *mat64.Dense) ([]int, float64) {
 }
 
 func main() {
-	rand.Seed(11)
-	walk := simpleRandomWalk(2200)
+	rand.Seed(0)
+	walk := simpleRandomWalk(6)
 	fmt.Println(mat64.Formatted(walk.T()))
-	cost, choices := BestChoices(100, walk)
+	cost, choices := BestChoices(3, walk)
 	fmt.Println(choices)
+	// Output:
 	fmt.Println(cost)
 }
