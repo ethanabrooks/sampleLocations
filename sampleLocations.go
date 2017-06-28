@@ -46,9 +46,7 @@ func getCost(path *mat64.Dense, start, stop int, cache *cache) float64 {
 	}
 
 	// Calculate euclidean distance between row at `start` and row at `start+1`.
-	distance := euclideanDistance(path, start, start+1)
-	getCost := getCost(path, start+1, stop, cache)
-	cost := distance + getCost
+	cost := euclideanDistance(path, start, start+1) + getCost(path, start+1, stop, cache)
 	storeCost(cache, start, stop, cost)
 	return cost
 }
@@ -138,9 +136,9 @@ func BestChoices(nChoices int, path *mat64.Dense) ([]int, float64) {
 
 func main() {
 	rand.Seed(11)
-	walk := simpleRandomWalk(50)
+	walk := simpleRandomWalk(2200)
 	fmt.Println(mat64.Formatted(walk.T()))
-	cost, choices := BestChoices(30, walk)
+	cost, choices := BestChoices(100, walk)
 	fmt.Println(choices)
 	fmt.Println(cost)
 }
