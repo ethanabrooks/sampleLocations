@@ -1,4 +1,13 @@
 package main
+// sampleLocations takes a series of locations and chooses a subset of them which are
+// most 'representative'. By this, we mean that if all locations besides the most
+// representative were eliminated from the series, the deviation from the original
+// series would be minimized. Here, we measure deviation in terms of mean squared error
+// and error in terms of Euclidean distance. Also, there is no interpolation between
+// locations in this model. This program uses dynamic programming to solve this problem.
+// The time and space complexity of the model is O(n^2 + nm), where n is the number of
+// locations in the series and m is the size of the subset, usually designated `nChoices`
+// in the program.
 
 import (
 	"fmt"
@@ -7,19 +16,27 @@ import (
 	"math/rand"
 )
 
-// Calculates the sum of mean squared errors from the first point in the path.
-func getCost(path *mat64.Dense, start int, stop int, cache *cache) float64 {
+func euclideanDistance(m *mat64.Dense, row1, row2 int) float64 {
+	_, dim := m.Dims()
+	sqDistance := 0.0
+	for i := 0; i < dim; i++ {
+		sqDistance += math.Pow(m.At(row1, i)-m.At(row2, i), 2)
+	}
+	return math.Sqrt(sqDistance)
+}
+
+// getCost calculates the sum of mean squared errors from the first point in the path.
+func getCost(path *mat64.Dense, start, stop int, cache *cache) float64 {
 
 	// Check validity of parameters.
-	size, dim := path.Dims()
+	size, _ := path.Dims()
 	if start < 0 || stop > size {
 		panic(fmt.Sprintf("Start (%d) must be positive and stop (%d) must be less "+
 			"than path length (%d).", start, stop, size))
 	}
 
 	// Check if return cost has been cached.
-	cost, ok := loadCost(cache, start, stop)
-	if ok {
+	if cost, ok := loadCost(cache, start, stop); ok {
 		return cost
 	}
 
@@ -29,17 +46,14 @@ func getCost(path *mat64.Dense, start int, stop int, cache *cache) float64 {
 	}
 
 	// Calculate euclidean distance between row at `start` and row at `start+1`.
-	sqDistance := 0.0
-	for i := 0; i < dim; i++ {
-		sqDistance += math.Pow(path.At(start+1, i)-path.At(start, i), 2)
-	}
-	euclideanDistance := math.Sqrt(sqDistance)
-	cost = euclideanDistance + getCost(path, start+1, stop, cache)
+	distance := euclideanDistance(path, start, start+1)
+	getCost := getCost(path, start+1, stop, cache)
+	cost := distance + getCost
 	storeCost(cache, start, stop, cost)
 	return cost
 }
 
-// Returns the tuple `(choice, cost)` where choice is the best next choice for
+// nextChoice returns the tuple `(choice, cost)` where choice is the best next choice for
 // `path[start:]` given `nChoices` remaining, and `cost` is the cost for this
 // choice.
 func nextChoice(
@@ -56,8 +70,7 @@ func nextChoice(
 	}
 
 	// Check if return value has been cached.
-	choice, cost, ok := loadBestChoice(cache, nChoices, start)
-	if ok {
+	if choice, cost, ok := loadNextChoice(cache, nChoices, start); ok {
 		return choice, cost
 	}
 
@@ -81,13 +94,13 @@ func nextChoice(
 			bestChoice = i
 		}
 	}
-	storeBestChoice(cache, nChoices, start, bestChoice, minCost)
+	storeNextChoice(cache, nChoices, start, bestChoice, minCost)
 	return bestChoice, minCost
 }
 
-// Returns the tuple `(choices, cost)` where choice is the list of choices
-// (length `nChoices`) that minimizes the cost of `path`. Values from
-// `nextChoice` and `getCost` are cached in `cache`.
+// bestChoicesWithCache returns the tuple `(choices, cost)` where choice is
+// the list of choices (length `nChoices`) that minimizes the cost of `path`.
+// Values from `nextChoice` and `getCost` are cached in `cache`.
 func bestChoicesWithCache(
 	nChoices int, path *mat64.Dense, start int, cache *cache) ([]int, float64) {
 	stop, _ := path.Dims()
@@ -104,7 +117,7 @@ func bestChoicesWithCache(
 	return append(otherChoices, choice), cost
 }
 
-// Reverses an array of ints. Copied from the go cookbook:
+// reverse reverses an array of ints. Copied from the go cookbook:
 // http://golangcookbook.com/chapters/arrays/reverse/.
 func reverse(numbers []int) []int {
 	for i := 0; i < len(numbers)/2; i++ {
@@ -114,9 +127,9 @@ func reverse(numbers []int) []int {
 	return numbers
 }
 
-// Returns the tuple `(choices, cost)` where choice is the list of choices
-// (length `nChoices`) that minimizes the cost of `path`.
-func bestChoices(nChoices int, path *mat64.Dense) ([]int, float64) {
+// BestChoices returns the tuple `(choices, cost)` where choice is the list of
+// choices (length `nChoices`) that minimizes the cost of `path`.
+func BestChoices(nChoices int, path *mat64.Dense) ([]int, float64) {
 	pathLen, _ := path.Dims()
 	cache := newCache(nChoices, pathLen)
 	choices, cost := bestChoicesWithCache(nChoices, path, 0, &cache)
@@ -125,9 +138,9 @@ func bestChoices(nChoices int, path *mat64.Dense) ([]int, float64) {
 
 func main() {
 	rand.Seed(11)
-	walk := simpleRandomWalk(500)
+	walk := simpleRandomWalk(50)
 	fmt.Println(mat64.Formatted(walk.T()))
-	cost, choices := bestChoices(30, walk)
+	cost, choices := BestChoices(30, walk)
 	fmt.Println(choices)
 	fmt.Println(cost)
 }

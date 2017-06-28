@@ -5,20 +5,22 @@ import (
 	"math"
 )
 
+// cache is a struct of matrices used for caching by the functions in sampleLocations.go
 type cache struct {
 	cost            *mat64.Dense
 	choice          *mat64.Dense
 	costWithChoices *mat64.Dense
 }
 
-// Generates a new `height` x `width` matrix with all values set to NaN
-func newCacheMatrix(height int, width int) *mat64.Dense {
+// newCacheMatrix generates a new `height` x `width` matrix with all values set to NaN
+func newCacheMatrix(height, width int) *mat64.Dense {
 	matrix := mat64.NewDense(height, width, nil)
 	matrix.Scale(math.NaN(), matrix)
 	return matrix
 }
 
-func newCache(nChoices int, pathLen int) cache {
+// newCache creates a `nChoices` x `pathLen` size matrix for use in the cache struct
+func newCache(nChoices, pathLen int) cache {
 	cache := cache{}
 
 	// Store the costs for all intervals [i:j] in path.
@@ -35,17 +37,21 @@ func newCache(nChoices int, pathLen int) cache {
 	return cache
 }
 
-func loadCost(cache *cache, start int, stop int) (float64, bool) {
+// loadCost checks if the cache contains the output of `getCost(path, start, stop, cache)`
+// and returns `(output, ok)` where `ok` is true iff the cache contains the value
+func loadCost(cache *cache, start, stop int) (float64, bool) {
 	cost := cache.cost.At(start, stop)
 	return cost, !math.IsNaN(cost)
 }
 
-func storeCost(cache *cache, start int, stop int, cost float64) {
+// storeCost caches the output of `getCost(path, start, stop, cache)`
+func storeCost(cache *cache, start, stop int, cost float64) {
 	cache.cost.Set(start, stop, cost)
 }
 
-func loadBestChoice(cache *cache, nChoices int,
-	start int) (int, float64, bool) {
+// loadNextChoice checks if the cache contains the output of `nextChoice(nChoices, path, start, cache)`
+// and returns `(output, ok)` where `ok` is true iff the cache contains the value
+func loadNextChoice(cache *cache, nChoices, start int) (int, float64, bool) {
 	choice := cache.choice.At(nChoices, start)
 	cost := cache.costWithChoices.At(nChoices, start)
 	switch {
@@ -58,7 +64,8 @@ func loadBestChoice(cache *cache, nChoices int,
 	}
 }
 
-func storeBestChoice(cache *cache, nChoices int, start int, choice int, cost float64) {
+// storeNextChoice caches the output of `nextChoice(nChoices, path, start, cache)`
+func storeNextChoice(cache *cache, nChoices, start, choice int, cost float64) {
 	cache.choice.Set(nChoices, start, float64(choice))
 	cache.costWithChoices.Set(nChoices, start, cost)
 }
